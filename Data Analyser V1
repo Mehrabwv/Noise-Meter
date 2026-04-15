@@ -1,0 +1,57 @@
+high_avg = None
+low_avg = None
+highest = None
+lowest = None
+
+while True:
+    fname = input("Enter file name: ")
+
+    try:
+        fhand = open(fname)
+        break
+    except FileNotFoundError:
+        print("File not found")
+
+next(fhand) #skips the first line
+for line in fhand:
+    line = line.rstrip()
+    list_of_words = line.split(",")
+
+    #Finding the average value
+    if high_avg is None or float(list_of_words[2]) > high_avg :
+        high_avg = float(list_of_words[2])
+        high_avg_date = list_of_words[0]
+        high_avg_time = list_of_words[1]
+        high_avg_all = list_of_words
+
+    if low_avg is None or float(list_of_words[2]) < low_avg:
+        low_avg = float(list_of_words[2])
+        low_avg_date = list_of_words[0]
+        low_avg_time = list_of_words[1]
+        low_avg_all = list_of_words
+
+    #Finding the highest value
+    if highest is None or float(list_of_words[4]) > highest:
+        highest = float(list_of_words[4])
+        highest_date = list_of_words[0]
+        highest_time = list_of_words[1]
+        highest_all = list_of_words
+
+    #Finding the lowest value
+    if lowest is None or float(list_of_words[3]) < lowest:
+        lowest = float(list_of_words[3])
+        lowest_date = list_of_words[0]
+        lowest_time = list_of_words[1]
+        lowest_all = list_of_words
+
+
+
+
+print(f"Highest average is: {high_avg} on {high_avg_date} at {high_avg_time}")
+print(high_avg_all)
+print(f"Lowest average is: {low_avg} on {low_avg_date} at {low_avg_time}")
+print(low_avg_all)
+print(f"Lowest reading is: {lowest} on {lowest_date} at {lowest_time}")
+print(lowest_all)
+print(f"Highest reading is: {highest} on {highest_date} at {highest_time}")
+print(highest_all)
