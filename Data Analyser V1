@@ -12,7 +12,8 @@ while True:
     except FileNotFoundError:
         print("File not found")
 
-next(fhand) #skips the first line
+next(fhand) #skips the first line (If first line does not contain the data)
+
 for line in fhand:
     line = line.rstrip()
     list_of_words = line.split(",")
@@ -43,9 +44,6 @@ for line in fhand:
         lowest_date = list_of_words[0]
         lowest_time = list_of_words[1]
         lowest_all = list_of_words
-
-
-
 
 print(f"Highest average is: {high_avg} on {high_avg_date} at {high_avg_time}")
 print(high_avg_all)
