@@ -1,1 +1,233 @@
+#include <SPI.h>
+#include <SD.h>
+#include <Wire.h>
+#include <RTClib.h>
+#include <TM1637Display.h>
 
+// =====================
+// Existing pins (unchanged)
+// =====================
+const int micPin = A0;
+const int chipSelect = 10;
+
+// =====================
+// TM1637 display pins
+// =====================
+const int displayCLK = 3;
+const int displayDIO = 2;
+
+// =====================
+// Logging settings
+// =====================
+const unsigned long sampleDelay = 20;            // time between raw reads
+const unsigned long logInterval = 300000UL;      // 5 minutes
+const unsigned long successDisplayTime = 1000UL; // show 55 for 1 second
+
+// =====================
+// Display status codes
+// =====================
+const int STATUS_MEASURING = 0;   // 00
+const int STATUS_SUCCESS   = 55;  // 55
+
+// =====================
+// Objects
+// =====================
+RTC_DS3231 rtc;   // change to RTC_DS1307 if needed
+TM1637Display display(displayCLK, displayDIO);
+
+// =====================
+// File/logging
+// =====================
+File logFile;
+char fileName[] = "LOG00.CSV";
+
+// =====================
+// Runtime variables
+// =====================
+unsigned long intervalStart = 0;
+unsigned long successShowStart = 0;
+bool showSuccess = false;
+unsigned long lastSampleTime = 0;
+
+int currentRaw = 0;
+
+// Stats for each 5-minute window
+unsigned long rawSum = 0;
+unsigned long rawCount = 0;
+int minRaw = 1023;
+int maxRaw = 0;
+
+// =====================
+// Reset stats for a new interval
+// =====================
+void resetIntervalStats() {
+  rawSum = 0;
+  rawCount = 0;
+  minRaw = 1023;
+  maxRaw = 0;
+}
+
+// =====================
+// Create unique CSV file
+// =====================
+void createLogFile() {
+  for (int i = 0; i < 100; i++) {
+    fileName[3] = '0' + (i / 10);
+    fileName[4] = '0' + (i % 10);
+
+    if (!SD.exists(fileName)) {
+      break;
+    }
+  }
+
+  logFile = SD.open(fileName, FILE_WRITE);
+
+  if (!logFile) {
+    Serial.println("Failed to create log file!");
+    while (true) {
+    }
+  }
+
+  Serial.print("Logging to file: ");
+  Serial.println(fileName);
+
+  logFile.println("Date,Time,Avg_Raw,Min_Raw,Max_Raw");
+  logFile.flush();
+
+  Serial.println("Date,Time,Avg_Raw,Min_Raw,Max_Raw");
+}
+
+// =====================
+// Display helper
+// First 2 digits = current raw reading scaled to 0-99
+// Last 2 digits = status
+// =====================
+void displayRawAndStatus(int rawValue, int statusCode) {
+  int displayValue = rawValue / 10; // 0-1023 -> 0-102 roughly
+  if (displayValue > 99) displayValue = 99;
+  if (displayValue < 0) displayValue = 0;
+
+  if (statusCode < 0) statusCode = 0;
+  if (statusCode > 99) statusCode = 99;
+
+  int combined = displayValue * 100 + statusCode;
+  display.showNumberDecEx(combined, 0, true);
+}
+
+// =====================
+// Save one CSV row
+// =====================
+void saveLogRow() {
+  if (rawCount == 0) {
+    Serial.println("No data collected.");
+    return;
+  }
+
+  float avgRaw = (float)rawSum / (float)rawCount;
+  DateTime now = rtc.now();
+
+  char dateBuf[11];
+  char timeBuf[9];
+
+  sprintf(dateBuf, "%04d-%02d-%02d", now.year(), now.month(), now.day());
+  sprintf(timeBuf, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+
+  Serial.print(dateBuf);
+  Serial.print(",");
+  Serial.print(timeBuf);
+  Serial.print(",");
+  Serial.print(avgRaw, 2);
+  Serial.print(",");
+  Serial.print(minRaw);
+  Serial.print(",");
+  Serial.println(maxRaw);
+
+  logFile.print(dateBuf);
+  logFile.print(",");
+  logFile.print(timeBuf);
+  logFile.print(",");
+  logFile.print(avgRaw, 2);
+  logFile.print(",");
+  logFile.print(minRaw);
+  logFile.print(",");
+  logFile.println(maxRaw);
+  logFile.flush();
+
+  showSuccess = true;
+  successShowStart = millis();
+}
+
+// =====================
+// Setup
+// =====================
+void setup() {
+  Serial.begin(115200);
+
+  // SD card
+  Serial.println("Initializing SD card...");
+  if (!SD.begin(chipSelect)) {
+    Serial.println("SD card initialization failed!");
+    while (true) {
+    }
+  }
+  Serial.println("SD card initialized.");
+
+  // RTC
+  Wire.begin();
+  if (!rtc.begin()) {
+    Serial.println("RTC not found!");
+    while (true) {
+    }
+  }
+
+  // Uncomment ONLY ONCE if you need to set RTC time:
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  // rtc.adjust(DateTime(2026, 4, 15, 18, 30, 0));
+
+  // Display
+  display.setBrightness(4);
+  display.clear();
+
+  createLogFile();
+  resetIntervalStats();
+  intervalStart = millis();
+}
+
+// =====================
+// Main loop
+// =====================
+void loop() {
+  unsigned long nowMs = millis();
+
+  // Sample raw analog reading every sampleDelay ms
+  if (nowMs - lastSampleTime >= sampleDelay) {
+    lastSampleTime = nowMs;
+
+    currentRaw = analogRead(micPin);
+
+    rawSum += currentRaw;
+    rawCount++;
+
+    if (currentRaw < minRaw) minRaw = currentRaw;
+    if (currentRaw > maxRaw) maxRaw = currentRaw;
+  }
+
+  // Save summary every 5 minutes
+  if (nowMs - intervalStart >= logInterval) {
+    saveLogRow();
+    resetIntervalStats();
+    intervalStart = nowMs;
+  }
+
+  // Display status
+  int statusToShow = STATUS_MEASURING;
+
+  if (showSuccess) {
+    statusToShow = STATUS_SUCCESS;
+    if (nowMs - successShowStart >= successDisplayTime) {
+      showSuccess = false;
+    }
+  }
+
+  displayRawAndStatus(currentRaw, statusToShow);
+}
